@@ -1,55 +1,68 @@
 import argparse
 import vobject
+import os
 from math import ceil
-from datetime import date
+import datetime
 
-from os import listdir
-from os.path import isfile, isdir
+def parse_files(files):
+    birthday_dict = dict()
 
+    for file in files:
+        try:
+            with open(file) as f:
+                vcard = vobject.readOne(''.join(f.readlines()))
+        except:
+            print(f'Error reading {file} as vcard')
 
-ap = argparse.ArgumentParser(
-        description='Print birthdays of local vcard files',
-        formatter_class=argparse.RawTextHelpFormatter)
-ap.add_argument('dir', help='Path to dir containing vcards')
+        if 'bday' in vcard.contents:
+            year, mon, day = map(int, vcard.contents['bday'][0].value.split('-'))
+            birthday = datetime.date(year, mon, day)
 
-args = ap.parse_args()
+        if 'fn' in vcard.contents:
+            name = vcard.contents['fn'][0].value
 
-if not isdir(args.dir):
-    ap.print_help()
-    exit(1)
+        if name and birthday:
+            birthday_dict[name] = birthday
 
-files = [args.dir + '/' + f for f in listdir(args.dir) if isfile(args.dir + '/' + f)]
+        name, birthday = None, None
 
-min_distance = 365
-today = date.today()
+    return birthday_dict
 
-for file in files:
-    with open(file) as f:
-        file_data = f.readlines()
+if __name__ == '__main__':
+    ap = argparse.ArgumentParser(
+            description='Output icalendar containing events for birthdays in vcf files',
+            formatter_class=argparse.RawTextHelpFormatter)
+    ap.add_argument('dir',
+            help='Path to dir containing vcards')
 
-    vcard = vobject.readOne(''.join(file_data))
+    args = ap.parse_args()
 
-    if 'bday' in vcard.contents:
-        year, mon, day = map(int, vcard.contents['bday'][0].value.split('-'))
-        bday = date(today.year, mon, day)
+    if not os.path.isdir(args.dir):
+        ap.print_help()
+        exit(1)
 
-    if 'fn' in vcard.contents:
-        name = vcard.contents['fn'][0].value
+    files = [os.path.join(args.dir, f) for f in os.listdir(args.dir) if os.path.isfile(os.path.join(args.dir, f))]
 
-    if name and bday:
-        if bday.replace(year=today.year) < today:
-            bday = bday.replace(year=today.year+1)
+    birthday_dict = parse_files(files)
 
-        ttb = (bday - today).days
+    ical = vobject.iCalendar()
+    ical.add('prodid').value = f'bday-remind'.upper()
 
-        if ttb < min_distance:
-            min_distance = ttb
-            next_name = name
-            next_bday = bday.replace(year=year)
+    for k, v in birthday_dict.items():
+        vevent = ical.add('vevent')
+        vevent.add('summary').value = f'[BDAY] {k}'
+        vevent.add('description').value = f'Born {v}'
+        vevent.add('uid').value = f'bday-remind-{k.replace(" ", "-").lower()}-{v}'
 
-    name, bday, ttb = None, None, None
+        dtstart = vevent.add('dtstart')
+        dtstart.value = v
 
-age = ceil(abs(today - next_bday).days / 365)
-print(f'fn:{next_name}')
-print(f'bday:{next_bday}')
-print(f'age:{age}')
+        valarm = vevent.add('valarm')
+        valarm.add('action').value = 'DISPLAY'
+        valarm.add('trigger').value = datetime.timedelta(minutes=-30)
+
+        rrule = vevent.add('rrule')
+        rrule.value = 'FREQ=YEARLY'
+
+    print(ical.serialize())
+
