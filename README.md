@@ -8,6 +8,7 @@ Depends on the python module
 
 Example output for a `vcard` file with the following data in ./test/:
 
+	$ cat ./test/testfile.vcf
 	BEGIN:VCARD
 	VERSION:3.0
 	UID:db2092b7d8b2e11ba6c06f3cb01ded62
